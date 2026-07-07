@@ -1,0 +1,126 @@
+managed implementation in class zbp_i_cmp_hdr unique;
+strict ( 2 );
+with draft;
+
+define behavior for ZI_CMP_HDR alias Complaint
+persistent table zsn_cmp_hdr
+draft table zsn_cmp_hdr_d
+lock master total etag LastChangedAt
+authorization master ( global, instance )
+etag master LastChangedAt
+early numbering
+{
+  create;
+  update;
+  internal delete;
+
+  // Framework-required draft actions
+  draft action Edit;
+  draft action Activate optimized;
+  draft action Discard;
+  draft action Resume;
+
+  // Staging pipeline validations handshake
+  draft determine action Prepare
+  {
+    validation ValidateComplaint;
+    validation Comment~ValidateComment;
+  }
+
+  // --- DATABASE FIELD MAPPING ---
+  mapping for zsn_cmp_hdr
+  {
+    ComplaintId   = complaint_id;
+    CustomerId    = customer_id;
+    StatusId      = status_id;
+    CategoryId    = category_id;
+    PriorityId    = priority_id;
+    AgentId       = agent_id;
+    Title         = title;
+    Description   = description;
+    CreatedBy     = created_by;
+    CreatedAt     = created_at;
+    ClosedBy      = closed_by;
+    ClosedOn      = closed_on;
+    LastChangedAt = last_changed_at;
+  }
+
+  // Business Actions
+  action CloseComplaint  result [1] $self;
+  action CancelComplaint result [1] $self;
+  action AssignAgent parameter ZI_ASSIGN_AGENT_PARAM result [1] $self;
+  action StartProcessing result [1] $self;
+
+  // Fully managed system tracking properties
+  field ( readonly )
+        ComplaintId,
+        CustomerId,
+        StatusId,
+        CreatedBy,
+        CreatedAt,
+        ClosedBy,
+        ClosedOn,
+        LastChangedAt;
+
+  // Enforced input parameters upon initial creation
+  field ( mandatory : create )
+        CategoryId,
+        Title,
+        Description;
+
+  // Lock parent ticket definitions permanently to preserve statement record
+  field ( readonly : update )
+        Title,
+        Description;
+
+  // Lifecycle Determinations and Database-Level Guards
+  determination SetInitialValues on modify { create; }
+  validation ValidateComplaint on save { create; update; }
+
+  // Composition link routing through the draft-enabled pipeline
+  association _Comments { create; with draft; }
+}
+
+define behavior for ZI_CMP_COMMENT alias Comment
+persistent table zsn_cmp_comment
+draft table zsn_cmp_com_d
+lock dependent by _Complaint
+authorization dependent by _Complaint
+etag dependent by _Complaint
+early numbering
+{
+  // Internal operations allow staging container adjustments without UI exposure
+  internal delete;
+  internal update;
+
+  // --- DATABASE FIELD MAPPING ---
+  mapping for zsn_cmp_comment
+  {
+    ComplaintId   = complaint_id;
+    CommentId     = comment_id;
+    CommentByType = comment_by_type;
+    CommentById   = comment_by_id;
+    CommentText   = comment_text;
+    CreatedBy     = created_by;
+    CreatedAt     = created_at;
+  }
+
+  // System logs assigned dynamically during creation
+  field ( readonly )
+        ComplaintId,
+        CommentId,
+        CommentByType,
+        CommentById,
+        CreatedBy,
+        CreatedAt;
+
+  // Immutability Switch: Open for initialization, strictly frozen against modifications
+  field ( mandatory : create, readonly : update )
+        CommentText;
+
+  // Lifecycle Hooks
+  determination SetCommentDetails on modify { create; }
+  validation ValidateComment on save { create; }
+
+  association _Complaint{ with draft; }
+}
