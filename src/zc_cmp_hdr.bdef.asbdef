@@ -1,0 +1,31 @@
+projection;
+strict ( 2 );
+use draft; // ◄ Enforces draft capability synchronization with the base layer
+
+define behavior for ZC_CMP_HDR alias Complaint
+{
+  use create;
+  use update;
+
+  // Expose your custom business lifecycle actions
+  use action CloseComplaint;
+  use action CancelComplaint;
+  use action AssignAgent;
+  use action StartProcessing;
+
+  use action Edit;
+  use action Activate;
+  use action Discard;
+  use action Resume;
+  use action Prepare;
+
+  // Expose the draft-enabled child creation association tree
+  use association _Comments { create; with draft; }
+}
+
+define behavior for ZC_CMP_COMMENT alias Comment
+{
+
+  // Expose draft-enabled navigation back up to the parent header
+  use association _Complaint { with draft; }
+}

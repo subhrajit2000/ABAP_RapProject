@@ -1,0 +1,5 @@
+@EndUserText.label: 'Service Definition for Complaint App'
+define service ZUI_CMP_SERVICE {
+  expose ZC_CMP_HDR     as Complaint;
+  expose ZC_CMP_COMMENT as Comment;
+}

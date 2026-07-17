@@ -46,10 +46,10 @@ early numbering
   }
 
   // Business Actions
-  action CloseComplaint  result [1] $self;
-  action CancelComplaint result [1] $self;
-  action AssignAgent parameter ZI_ASSIGN_AGENT_PARAM result [1] $self;
-  action StartProcessing result [1] $self;
+  action ( features : instance ) CloseComplaint  result [1] $self;
+  action ( features : instance ) CancelComplaint result [1] $self;
+  action ( features : instance ) AssignAgent parameter ZI_ASSIGN_AGENT_PARAM result [1] $self;
+  action ( features : instance ) StartProcessing result [1] $self;
 
   // Fully managed system tracking properties
   field ( readonly )
