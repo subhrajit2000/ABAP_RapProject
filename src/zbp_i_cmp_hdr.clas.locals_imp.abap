@@ -30,8 +30,12 @@ CLASS lhc_Complaint DEFINITION INHERITING FROM cl_abap_behavior_handler.
 
     METHODS StartProcessing FOR MODIFY
       IMPORTING keys FOR ACTION Complaint~StartProcessing RESULT result.
+
     METHODS get_instance_features FOR INSTANCE FEATURES
       IMPORTING keys REQUEST requested_features FOR Complaint RESULT result.
+
+    METHODS resolvecomplaint FOR MODIFY
+      IMPORTING keys FOR ACTION complaint~resolvecomplaint RESULT result.
 
 ENDCLASS.
 
@@ -259,7 +263,7 @@ ENDMETHOD.
 "-------METHOD EARLYNUMBERING_CBA_COMMENTS ENDS HERE-------
 
 "-------METHOD CANCELCOMPLAINT STARTS HERE-------
-  METHOD CancelComplaint.
+METHOD CancelComplaint.
 
   " ------------------------------------------------------------------
   " Step 1 : Read current complaint state from RAP transactional buffer
@@ -282,10 +286,32 @@ ENDMETHOD.
   LOOP AT lt_complaints ASSIGNING FIELD-SYMBOL(<ls_complaint>).
 
     "--------------------------------------------------------------
-    " Rule 1 : Complaints already in progress cannot be cancelled
+    " Rule 1 : Assigned complaints cannot be cancelled
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'ASSIGNED'.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Assigned complaints cannot be cancelled.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 2 : Complaints already in progress cannot be cancelled
     "--------------------------------------------------------------
     IF <ls_complaint>-StatusId = 'INPROGRESS'.
-      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
 
       APPEND VALUE #(
         %tky = <ls_complaint>-%tky
@@ -294,14 +320,38 @@ ENDMETHOD.
                  text     = 'Complaints already in progress cannot be cancelled.'
                )
       ) TO reported-complaint.
+
       CONTINUE.
+
     ENDIF.
 
     "--------------------------------------------------------------
-    " Rule 2 : Closed complaints cannot be cancelled
+    " Rule 3 : Resolved complaints cannot be cancelled
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'RESOLVED'.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Resolved complaints cannot be cancelled.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 4 : Closed complaints cannot be cancelled
     "--------------------------------------------------------------
     IF <ls_complaint>-StatusId = 'CLOSED'.
-      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
 
       APPEND VALUE #(
         %tky = <ls_complaint>-%tky
@@ -310,23 +360,29 @@ ENDMETHOD.
                  text     = 'Closed complaints cannot be cancelled.'
                )
       ) TO reported-complaint.
+
       CONTINUE.
+
     ENDIF.
 
     "--------------------------------------------------------------
-    " Rule 3 : Already cancelled (Backend Idempotency)
+    " Rule 5 : Already cancelled (Backend Idempotency)
     "--------------------------------------------------------------
     IF <ls_complaint>-StatusId = 'CANCELLED'.
       CONTINUE.
     ENDIF.
 
     "--------------------------------------------------------------
-    " Rule 4 : NEW / ASSIGNED -> CANCELLED
+    " Rule 6 : NEW -> CANCELLED
     "--------------------------------------------------------------
-    APPEND VALUE #(
-      %tky     = <ls_complaint>-%tky
-      StatusId = 'CANCELLED'
-    ) TO lt_update.
+    IF <ls_complaint>-StatusId = 'NEW'.
+
+      APPEND VALUE #(
+        %tky     = <ls_complaint>-%tky
+        StatusId = 'CANCELLED'
+      ) TO lt_update.
+
+    ENDIF.
 
   ENDLOOP.
 
@@ -334,6 +390,7 @@ ENDMETHOD.
   " Step 3 : Update RAP Transaction Buffer
   " ------------------------------------------------------------------
   IF lt_update IS NOT INITIAL.
+
     MODIFY ENTITIES OF zi_cmp_hdr IN LOCAL MODE
       ENTITY Complaint
         UPDATE FIELDS ( StatusId )
@@ -341,17 +398,21 @@ ENDMETHOD.
       REPORTED DATA(lt_reported)
       FAILED DATA(lt_failed).
 
-    reported-complaint = CORRESPONDING #( BASE ( reported-complaint )
-                                           lt_reported-complaint ).
+    reported-complaint = CORRESPONDING #(
+      BASE ( reported-complaint )
+      lt_reported-complaint ).
 
-    failed-complaint   = CORRESPONDING #( BASE ( failed-complaint )
-                                           lt_failed-complaint ).
+    failed-complaint = CORRESPONDING #(
+      BASE ( failed-complaint )
+      lt_failed-complaint ).
+
   ENDIF.
 
   " ------------------------------------------------------------------
   " Step 4 : Refresh only modified entities ($self)
   " ------------------------------------------------------------------
   IF lt_update IS NOT INITIAL.
+
     READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
       ENTITY Complaint
         ALL FIELDS
@@ -365,6 +426,7 @@ ENDMETHOD.
         %param = ls_result
       )
     ).
+
   ENDIF.
 
 ENDMETHOD.
@@ -372,14 +434,14 @@ ENDMETHOD.
 
 
 "-------METHOD CLOSECOMPLAINT STARTS HERE-------
-  METHOD CloseComplaint.
+METHOD CloseComplaint.
 
   " ------------------------------------------------------------------
   " Step 1 : Read current complaint state from RAP transactional buffer
   " ------------------------------------------------------------------
   READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
     ENTITY Complaint
-      FIELDS ( StatusId AgentId ClosedBy ClosedOn )
+      FIELDS ( StatusId AgentId )
       WITH CORRESPONDING #( keys )
     RESULT DATA(lt_complaints).
 
@@ -403,7 +465,9 @@ ENDMETHOD.
     " Rule 1 : NEW complaints cannot be closed
     "--------------------------------------------------------------
     IF <ls_complaint>-StatusId = 'NEW'.
-      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
 
       APPEND VALUE #(
         %tky = <ls_complaint>-%tky
@@ -412,14 +476,18 @@ ENDMETHOD.
                  text     = 'Assign an agent and start processing before closing the complaint.'
                )
       ) TO reported-complaint.
+
       CONTINUE.
+
     ENDIF.
 
     "--------------------------------------------------------------
     " Rule 2 : ASSIGNED complaints cannot be closed
     "--------------------------------------------------------------
     IF <ls_complaint>-StatusId = 'ASSIGNED'.
-      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
 
       APPEND VALUE #(
         %tky = <ls_complaint>-%tky
@@ -428,14 +496,38 @@ ENDMETHOD.
                  text     = 'Start processing the complaint before closing it.'
                )
       ) TO reported-complaint.
+
       CONTINUE.
+
     ENDIF.
 
     "--------------------------------------------------------------
-    " Rule 3 : CANCELLED complaints cannot be closed
+    " Rule 3 : Complaint must first be resolved
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'INPROGRESS'.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Resolve the complaint before closing it.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 4 : CANCELLED complaints cannot be closed
     "--------------------------------------------------------------
     IF <ls_complaint>-StatusId = 'CANCELLED'.
-      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky )
+        TO failed-complaint.
 
       APPEND VALUE #(
         %tky = <ls_complaint>-%tky
@@ -444,29 +536,31 @@ ENDMETHOD.
                  text     = 'Cancelled complaints cannot be closed.'
                )
       ) TO reported-complaint.
+
       CONTINUE.
+
     ENDIF.
 
     "--------------------------------------------------------------
-    " Rule 4 : Already closed (Backend Idempotency)
+    " Rule 5 : Already closed (Backend Idempotency)
     "--------------------------------------------------------------
     IF <ls_complaint>-StatusId = 'CLOSED'.
       CONTINUE.
     ENDIF.
 
     "--------------------------------------------------------------
-    " Rule 5 : INPROGRESS -> CLOSED
+    " Rule 6 : RESOLVED -> CLOSED
     "--------------------------------------------------------------
-    " Store the business AgentId as ClosedBy.
-    " In this project we simulate multiple business roles using one
-    " technical SAP user (BTP Trial). In a production system this field
-    " should contain the authenticated business user.
-    APPEND VALUE #(
-      %tky      = <ls_complaint>-%tky
-      StatusId  = 'CLOSED'
-      ClosedBy  = <ls_complaint>-AgentId
-      ClosedOn  = lv_timestamp
-    ) TO lt_update.
+    IF <ls_complaint>-StatusId = 'RESOLVED'.
+
+      APPEND VALUE #(
+        %tky      = <ls_complaint>-%tky
+        StatusId  = 'CLOSED'
+        ClosedBy  = <ls_complaint>-AgentId
+        ClosedOn  = lv_timestamp
+      ) TO lt_update.
+
+    ENDIF.
 
   ENDLOOP.
 
@@ -474,6 +568,7 @@ ENDMETHOD.
   " Step 3 : Update RAP Transaction Buffer
   " ------------------------------------------------------------------
   IF lt_update IS NOT INITIAL.
+
     MODIFY ENTITIES OF zi_cmp_hdr IN LOCAL MODE
       ENTITY Complaint
         UPDATE FIELDS ( StatusId ClosedBy ClosedOn )
@@ -481,17 +576,21 @@ ENDMETHOD.
       REPORTED DATA(lt_reported)
       FAILED DATA(lt_failed).
 
-    reported-complaint = CORRESPONDING #( BASE ( reported-complaint )
-                                           lt_reported-complaint ).
+    reported-complaint = CORRESPONDING #(
+      BASE ( reported-complaint )
+      lt_reported-complaint ).
 
-    failed-complaint   = CORRESPONDING #( BASE ( failed-complaint )
-                                           lt_failed-complaint ).
+    failed-complaint = CORRESPONDING #(
+      BASE ( failed-complaint )
+      lt_failed-complaint ).
+
   ENDIF.
 
   " ------------------------------------------------------------------
   " Step 4 : Refresh only modified entities ($self)
   " ------------------------------------------------------------------
   IF lt_update IS NOT INITIAL.
+
     READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
       ENTITY Complaint
         ALL FIELDS
@@ -505,6 +604,7 @@ ENDMETHOD.
         %param = ls_result
       )
     ).
+
   ENDIF.
 
 ENDMETHOD.
@@ -573,74 +673,195 @@ ENDMETHOD.
 "-------METHOD SETINITIALVALUES ENDS HERE-------
 
 "-------METHOD VALIDATECOMPLAINT STARTS HERE-------
-  METHOD ValidateComplaint.
-    " ------------------------------------------------------------------
-    " Step 1: Bulk Read the text inputs out of memory buffer
-    " ------------------------------------------------------------------
-    READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
-      ENTITY Complaint
-        FIELDS ( Title Description )
-        WITH CORRESPONDING #( keys )
-      RESULT DATA(lt_complaints).
+METHOD ValidateComplaint.
 
-    " ------------------------------------------------------------------
-    " Step 2: The Evaluation Loop (Phase 1 Local Constraints)
-    " ------------------------------------------------------------------
-    LOOP AT lt_complaints ASSIGNING FIELD-SYMBOL(<ls_complaint>).
+  " ------------------------------------------------------------------
+  " Phase 1 : Read complaint data from RAP Transaction Buffer
+  " ------------------------------------------------------------------
+  READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
+    ENTITY Complaint
+      FIELDS ( CustomerId CategoryId Title Description )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(lt_complaints).
 
-      " Check A: Enforce Mandatory Title
-      IF <ls_complaint>-Title IS INITIAL.
-        " Block the database save pipeline
-        APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+  IF lt_complaints IS INITIAL.
+    RETURN.
+  ENDIF.
 
-        " Highlight the specific field and pass the error message
-        APPEND VALUE #(
-          %tky           = <ls_complaint>-%tky
-          %element-Title = if_abap_behv=>mk-on
-          %msg           = new_message_with_text(
-                             severity = if_abap_behv_message=>severity-error
-                             text     = 'A summary Title is mandatory for every complaint record.'
-                           )
-        ) TO reported-complaint.
-      ENDIF.
+  " ------------------------------------------------------------------
+  " Phase 2 : Collect unique Customer IDs and Category IDs
+  " ------------------------------------------------------------------
+  DATA:
+    lt_customer_ids TYPE SORTED TABLE OF zsn_customer-customer_id
+                       WITH UNIQUE KEY table_line,
+    lt_category_ids TYPE SORTED TABLE OF zsn_category-category_id
+                       WITH UNIQUE KEY table_line.
 
-      " Check B: Enforce Mandatory Description & Minimum Length
-      IF <ls_complaint>-Description IS INITIAL.
-        " Case 1: Field is completely blank
-        APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+  LOOP AT lt_complaints ASSIGNING FIELD-SYMBOL(<ls_complaint>).
 
-        APPEND VALUE #(
-          %tky                 = <ls_complaint>-%tky
-          %element-Description = if_abap_behv=>mk-on
-          %msg                 = new_message_with_text(
-                                   severity = if_abap_behv_message=>severity-error
-                                   text     = 'Detailed Description cannot be left empty.'
-                                 )
-        ) TO reported-complaint.
+    IF <ls_complaint>-CustomerId IS NOT INITIAL.
+      INSERT <ls_complaint>-CustomerId INTO TABLE lt_customer_ids.
+    ENDIF.
 
-      ELSEIF numofchar( <ls_complaint>-Description ) < 10.
-        " Case 2: Field has data, but it fails the 10-character minimum threshold
-        APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+    IF <ls_complaint>-CategoryId IS NOT INITIAL.
+      INSERT <ls_complaint>-CategoryId INTO TABLE lt_category_ids.
+    ENDIF.
 
-        APPEND VALUE #(
-          %tky                 = <ls_complaint>-%tky
-          %element-Description = if_abap_behv=>mk-on
-          %msg                 = new_message_with_text(
-                                   severity = if_abap_behv_message=>severity-error
-                                   text     = 'Description is too short. Please provide at least 10 meaningfull characters of context.'
-                                 )
-        ) TO reported-complaint.
-      ENDIF.
+  ENDLOOP.
 
-    ENDLOOP.
-  ENDMETHOD.
+  " ------------------------------------------------------------------
+  " Phase 3 : Bulk Read Customer Master
+  " ------------------------------------------------------------------
+  DATA lt_customers TYPE SORTED TABLE OF zsn_customer
+                       WITH UNIQUE KEY customer_id.
+
+  IF lt_customer_ids IS NOT INITIAL.
+
+    SELECT FROM zsn_customer
+      FIELDS customer_id
+      FOR ALL ENTRIES IN @lt_customer_ids
+      WHERE customer_id = @lt_customer_ids-table_line
+      INTO TABLE @lt_customers.
+
+  ENDIF.
+
+  " ------------------------------------------------------------------
+  " Phase 4 : Bulk Read Category Master
+  " ------------------------------------------------------------------
+  DATA lt_categories TYPE SORTED TABLE OF zsn_category
+                        WITH UNIQUE KEY category_id.
+
+  IF lt_category_ids IS NOT INITIAL.
+
+    SELECT FROM zsn_category
+      FIELDS category_id
+      FOR ALL ENTRIES IN @lt_category_ids
+      WHERE category_id = @lt_category_ids-table_line
+      INTO TABLE @lt_categories.
+
+  ENDIF.
+
+  " ------------------------------------------------------------------
+  " Phase 5 : Business Validation Loop
+  " ------------------------------------------------------------------
+  LOOP AT lt_complaints ASSIGNING <ls_complaint>.
+
+    "--------------------------------------------------------------
+    " Check A : Title is Mandatory
+    "--------------------------------------------------------------
+    IF <ls_complaint>-Title IS INITIAL.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+      ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky           = <ls_complaint>-%tky
+        %element-Title = if_abap_behv=>mk-on
+        %msg           = new_message_with_text(
+                           severity = if_abap_behv_message=>severity-error
+                           text     = 'A summary Title is mandatory for every complaint record.'
+                         )
+      ) TO reported-complaint.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Check B : Description is Mandatory
+    "--------------------------------------------------------------
+    IF <ls_complaint>-Description IS INITIAL.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+      ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky                 = <ls_complaint>-%tky
+        %element-Description = if_abap_behv=>mk-on
+        %msg                 = new_message_with_text(
+                                 severity = if_abap_behv_message=>severity-error
+                                 text     = 'Detailed Description cannot be left empty.'
+                               )
+      ) TO reported-complaint.
+
+    ELSEIF numofchar( <ls_complaint>-Description ) < 10.
+
+      "------------------------------------------------------------
+      " Check C : Description Minimum Length
+      "------------------------------------------------------------
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+      ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky                 = <ls_complaint>-%tky
+        %element-Description = if_abap_behv=>mk-on
+        %msg                 = new_message_with_text(
+                                 severity = if_abap_behv_message=>severity-error
+                                 text     = 'Description must contain at least 10 meaningful characters.'
+                               )
+      ) TO reported-complaint.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Check D : Customer Must Exist
+    "--------------------------------------------------------------
+    READ TABLE lt_customers
+      WITH TABLE KEY customer_id = <ls_complaint>-CustomerId
+      TRANSPORTING NO FIELDS.
+
+    IF sy-subrc <> 0.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+      ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky                = <ls_complaint>-%tky
+        %element-CustomerId = if_abap_behv=>mk-on
+        %msg                = new_message_with_text(
+                                severity = if_abap_behv_message=>severity-error
+                                text     = 'Selected Customer does not exist.'
+                              )
+      ) TO reported-complaint.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Check E : Category Must Exist
+    "--------------------------------------------------------------
+    READ TABLE lt_categories
+      WITH TABLE KEY category_id = <ls_complaint>-CategoryId
+      TRANSPORTING NO FIELDS.
+
+    IF sy-subrc <> 0.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+      ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky                = <ls_complaint>-%tky
+        %element-CategoryId = if_abap_behv=>mk-on
+        %msg                = new_message_with_text(
+                                severity = if_abap_behv_message=>severity-error
+                                text     = 'Selected Category does not exist.'
+                              )
+      ) TO reported-complaint.
+
+    ENDIF.
+
+  ENDLOOP.
+
+ENDMETHOD.
 "-------METHOD VALIDATECOMPLAINT ENDS HERE-------
 
 "-------METHOD ASSIGNAGENT STARTS HERE-------
-  METHOD AssignAgent.
+METHOD AssignAgent.
 
   " ------------------------------------------------------------------
-  " Step 1: Bulk Read current state from the transactional buffer
+  " Phase 1 : Read Complaint data from RAP Transaction Buffer
   " ------------------------------------------------------------------
   READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
     ENTITY Complaint
@@ -652,46 +873,55 @@ ENDMETHOD.
     RETURN.
   ENDIF.
 
+  " ------------------------------------------------------------------
+  " Phase 2 : Collect unique Agent IDs from Action Parameters
+  " ------------------------------------------------------------------
+  DATA:
+    lt_agent_ids TYPE SORTED TABLE OF zsn_agent-agent_id
+                   WITH UNIQUE KEY table_line.
+
+  LOOP AT keys ASSIGNING FIELD-SYMBOL(<ls_key>).
+
+    IF <ls_key>-%param-AgentId IS NOT INITIAL.
+      INSERT <ls_key>-%param-AgentId
+        INTO TABLE lt_agent_ids.
+    ENDIF.
+
+  ENDLOOP.
+
+  " ------------------------------------------------------------------
+  " Phase 3 : Bulk Read Agent Master
+  " ------------------------------------------------------------------
+  DATA lt_agents TYPE SORTED TABLE OF zsn_agent
+                   WITH UNIQUE KEY agent_id.
+
+  IF lt_agent_ids IS NOT INITIAL.
+
+    SELECT FROM zsn_agent
+      FIELDS agent_id
+      FOR ALL ENTRIES IN @lt_agent_ids
+      WHERE agent_id = @lt_agent_ids-table_line
+      INTO TABLE @lt_agents.
+
+  ENDIF.
+
   DATA lt_update TYPE TABLE FOR UPDATE zi_cmp_hdr\\Complaint.
 
   " ------------------------------------------------------------------
-  " Step 2: Integrated Business Logic Validation Loop
+  " Phase 4 : Business Validation Loop
   " ------------------------------------------------------------------
   LOOP AT lt_complaints ASSIGNING FIELD-SYMBOL(<ls_complaint>).
 
-    " Match the current row with the popup action parameters
-    READ TABLE keys ASSIGNING FIELD-SYMBOL(<ls_key>)
+    READ TABLE keys ASSIGNING <ls_key>
       WITH KEY id COMPONENTS %tky = <ls_complaint>-%tky.
 
     IF sy-subrc <> 0.
       CONTINUE.
     ENDIF.
 
-    " --------------------------------------------------------------
-    " Rule 1: Terminal State Protection
-    " --------------------------------------------------------------
-    IF <ls_complaint>-StatusId = 'CLOSED'
-    OR <ls_complaint>-StatusId = 'CANCELLED'.
-
-      APPEND VALUE #(
-        %tky = <ls_complaint>-%tky
-      ) TO failed-complaint.
-
-      APPEND VALUE #(
-        %tky = <ls_complaint>-%tky
-        %msg = new_message_with_text(
-                 severity = if_abap_behv_message=>severity-error
-                 text     = 'Closed or cancelled complaints cannot be assigned to an agent.'
-               )
-      ) TO reported-complaint.
-
-      CONTINUE.
-
-    ENDIF.
-
-    " --------------------------------------------------------------
-    " Rule 2: Defensive Parameter Validation (Vault Door Check)
-    " --------------------------------------------------------------
+    "--------------------------------------------------------------
+    " Rule 1 : Agent ID must be provided
+    "--------------------------------------------------------------
     IF <ls_key>-%param-AgentId IS INITIAL.
 
       APPEND VALUE #(
@@ -702,7 +932,7 @@ ENDMETHOD.
         %tky = <ls_complaint>-%tky
         %msg = new_message_with_text(
                  severity = if_abap_behv_message=>severity-error
-                 text     = 'Assignment failed. A valid Agent ID must be provided.'
+                 text     = 'A valid Agent ID must be provided.'
                )
       ) TO reported-complaint.
 
@@ -710,21 +940,65 @@ ENDMETHOD.
 
     ENDIF.
 
-    " --------------------------------------------------------------
-    " Rule 3: Preserve Business Workflow State (State Machine Logic)
-    " --------------------------------------------------------------
+    "--------------------------------------------------------------
+    " Rule 2 : Agent must exist
+    "--------------------------------------------------------------
+    READ TABLE lt_agents
+      WITH TABLE KEY agent_id = <ls_key>-%param-AgentId
+      TRANSPORTING NO FIELDS.
+
+    IF sy-subrc <> 0.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+      ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Selected Agent does not exist.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 3 : Only NEW complaints can be assigned
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId <> 'NEW'.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+      ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Only NEW complaints can be assigned.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 4 : Assign Agent
+    "--------------------------------------------------------------
     APPEND VALUE #(
       %tky     = <ls_complaint>-%tky
       AgentId  = <ls_key>-%param-AgentId
-      StatusId = COND #( WHEN <ls_complaint>-StatusId = 'NEW'
-                         THEN 'ASSIGNED'
-                         ELSE <ls_complaint>-StatusId )
+      StatusId = 'ASSIGNED'
     ) TO lt_update.
 
   ENDLOOP.
 
   " ------------------------------------------------------------------
-  " Step 3: Atomic Transactional Buffer Update
+  " Phase 5 : Update RAP Transaction Buffer
   " ------------------------------------------------------------------
   IF lt_update IS NOT INITIAL.
 
@@ -735,19 +1009,21 @@ ENDMETHOD.
       REPORTED DATA(lt_reported)
       FAILED DATA(lt_failed).
 
-    reported-complaint = CORRESPONDING #( BASE ( reported-complaint )
-                                           lt_reported-complaint ).
+    reported-complaint = CORRESPONDING #(
+      BASE ( reported-complaint )
+      lt_reported-complaint ).
 
-    failed-complaint = CORRESPONDING #( BASE ( failed-complaint )
-                                         lt_failed-complaint ).
+    failed-complaint = CORRESPONDING #(
+      BASE ( failed-complaint )
+      lt_failed-complaint ).
 
   ENDIF.
 
   " ------------------------------------------------------------------
-  " Step 4: Refresh ONLY modified instances for the RAP Action Result
+  " Phase 6 : Refresh updated instances
   " ------------------------------------------------------------------
-  " Optimization: Using lt_update bypasses reading skipped or failed records
   IF lt_update IS NOT INITIAL.
+
     READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
       ENTITY Complaint
         ALL FIELDS
@@ -761,6 +1037,7 @@ ENDMETHOD.
         %param = ls_result
       )
     ).
+
   ENDIF.
 
 ENDMETHOD.
@@ -844,13 +1121,20 @@ ENDMETHOD.
       CONTINUE.
     ENDIF.
 
-    "--------------------------------------------------------------
-    " Rule 5 : ASSIGNED -> INPROGRESS
-    "--------------------------------------------------------------
-    APPEND VALUE #(
-      %tky     = <ls_complaint>-%tky
-      StatusId = 'INPROGRESS'
-    ) TO lt_update.
+   "--------------------------------------------------------------
+   " Rule 5 : Allowed State Transition
+   " ASSIGNED  -> INPROGRESS
+   " RESOLVED  -> INPROGRESS (Resume Processing)
+   "--------------------------------------------------------------
+   IF <ls_complaint>-StatusId = 'ASSIGNED'
+   OR <ls_complaint>-StatusId = 'RESOLVED'.
+
+   APPEND VALUE #(
+     %tky     = <ls_complaint>-%tky
+     StatusId = 'INPROGRESS'
+   ) TO lt_update.
+
+   ENDIF.
 
   ENDLOOP.
 
@@ -895,51 +1179,237 @@ ENDMETHOD.
 ENDMETHOD.
 "-------METHOD STARTPROCESSING ENDS HERE-------
 
-"-------METHOD GET_INSTANCE_FEATURES STARTS HERE-------
-  METHOD get_instance_features.
-    " ------------------------------------------------------------------
-    " Step 1: Bulk Read the current status of the complaints on screen
-    " ------------------------------------------------------------------
-    READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
-      ENTITY Complaint
-        FIELDS ( StatusId )
-        WITH CORRESPONDING #( keys )
-      RESULT DATA(lt_complaints).
+"-------METHOD GET INSTANCE FEATURE STARTS HERE-------
+METHOD get_instance_features.
 
-    IF lt_complaints IS INITIAL.
-      RETURN.
-    ENDIF.
+  " ------------------------------------------------------------------
+  " Step 1 : Read current complaint status from RAP transactional buffer
+  " ------------------------------------------------------------------
+  READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
+    ENTITY Complaint
+      FIELDS ( StatusId )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(lt_complaints).
 
-    " ------------------------------------------------------------------
-    " Step 2: Map the Status Engine Rules to the UI Buttons
-    " ------------------------------------------------------------------
-    result = VALUE #( FOR ls_cmp IN lt_complaints (
+  IF lt_complaints IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  " ------------------------------------------------------------------
+  " Step 2 : Enable/Disable UI actions based on Complaint State Machine
+  " ------------------------------------------------------------------
+  result = VALUE #(
+
+    FOR ls_cmp IN lt_complaints (
+
       %tky = ls_cmp-%tky
 
-      " Rule A: Assign Agent can happen anywhere except terminal states (Closed/Cancelled)
-      %action-AssignAgent = COND #( WHEN ls_cmp-StatusId = 'CLOSED'
-                                      OR ls_cmp-StatusId = 'CANCELLED'
-                                    THEN if_abap_behv=>fc-o-disabled
-                                    ELSE if_abap_behv=>fc-o-enabled )
+      "--------------------------------------------------------------
+      " Rule A : Assign Agent
+      " Allowed only for NEW complaints
+      "--------------------------------------------------------------
+      %action-AssignAgent =
+        COND #(
+          WHEN ls_cmp-StatusId = 'NEW'
+          THEN if_abap_behv=>fc-o-enabled
+          ELSE if_abap_behv=>fc-o-disabled )
 
-      " Rule B: Start Processing can ONLY be clicked if the ticket is strictly ASSIGNED
-      %action-StartProcessing = COND #( WHEN ls_cmp-StatusId = 'ASSIGNED'
-                                       THEN if_abap_behv=>fc-o-enabled
-                                       ELSE if_abap_behv=>fc-o-disabled )
+      "--------------------------------------------------------------
+      " Rule B : Start Processing
+      " ASSIGNED  -> INPROGRESS
+      " RESOLVED  -> INPROGRESS (Resume Processing)
+      "--------------------------------------------------------------
+      %action-StartProcessing =
+        COND #(
+          WHEN ls_cmp-StatusId = 'ASSIGNED'
+            OR ls_cmp-StatusId = 'RESOLVED'
+          THEN if_abap_behv=>fc-o-enabled
+          ELSE if_abap_behv=>fc-o-disabled )
 
-      " Rule C: Close Complaint can ONLY be clicked if work is actively INPROGRESS
-      %action-CloseComplaint = COND #( WHEN ls_cmp-StatusId = 'INPROGRESS'
-                                      THEN if_abap_behv=>fc-o-enabled
-                                      ELSE if_abap_behv=>fc-o-disabled )
+      "--------------------------------------------------------------
+      " Rule C : Resolve Complaint
+      " Allowed only for complaints currently INPROGRESS
+      "--------------------------------------------------------------
+      %action-ResolveComplaint =
+        COND #(
+          WHEN ls_cmp-StatusId = 'INPROGRESS'
+          THEN if_abap_behv=>fc-o-enabled
+          ELSE if_abap_behv=>fc-o-disabled )
 
-      " Rule D: Cancel Complaint can only happen on fresh tickets (NEW or ASSIGNED)
-      %action-CancelComplaint = COND #( WHEN ls_cmp-StatusId = 'NEW'
-                                       OR ls_cmp-StatusId = 'ASSIGNED'
-                                      THEN if_abap_behv=>fc-o-enabled
-                                      ELSE if_abap_behv=>fc-o-disabled )
-    ) ).
-  ENDMETHOD.
-"-------METHOD GET_INSTANCE_FEATURES ENDS HERE-------
+      "--------------------------------------------------------------
+      " Rule D : Close Complaint
+      " Allowed only after complaint is RESOLVED
+      "--------------------------------------------------------------
+      %action-CloseComplaint =
+        COND #(
+          WHEN ls_cmp-StatusId = 'RESOLVED'
+          THEN if_abap_behv=>fc-o-enabled
+          ELSE if_abap_behv=>fc-o-disabled )
+
+      "--------------------------------------------------------------
+      " Rule E : Cancel Complaint
+      " Allowed only for NEW complaints
+      "--------------------------------------------------------------
+      %action-CancelComplaint =
+        COND #(
+          WHEN ls_cmp-StatusId = 'NEW'
+          THEN if_abap_behv=>fc-o-enabled
+          ELSE if_abap_behv=>fc-o-disabled )
+
+    )
+
+  ).
+
+ENDMETHOD.
+"-------METHOD GET INSTANCE FEATURE ENDS HERE-------
+
+"-------METHOD RESOLVECOMPLAINT STARTS HERE-------
+  METHOD ResolveComplaint.
+
+  " ------------------------------------------------------------------
+  " Step 1 : Read current complaint state from RAP transactional buffer
+  " ------------------------------------------------------------------
+  READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
+    ENTITY Complaint
+      FIELDS ( StatusId )
+      WITH CORRESPONDING #( keys )
+    RESULT DATA(lt_complaints).
+
+  IF lt_complaints IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  DATA lt_update TYPE TABLE FOR UPDATE zi_cmp_hdr\\Complaint.
+
+  " ------------------------------------------------------------------
+  " Step 2 : Business Validation Loop
+  " ------------------------------------------------------------------
+  LOOP AT lt_complaints ASSIGNING FIELD-SYMBOL(<ls_complaint>).
+
+    "--------------------------------------------------------------
+    " Rule 1 : Complaint must be in progress
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'NEW'
+    OR <ls_complaint>-StatusId = 'ASSIGNED'.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Complaint must be in progress before it can be resolved.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 2 : Closed complaints cannot be resolved
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'CLOSED'.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Closed complaints cannot be resolved.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 3 : Cancelled complaints cannot be resolved
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'CANCELLED'.
+
+      APPEND VALUE #( %tky = <ls_complaint>-%tky ) TO failed-complaint.
+
+      APPEND VALUE #(
+        %tky = <ls_complaint>-%tky
+        %msg = new_message_with_text(
+                 severity = if_abap_behv_message=>severity-error
+                 text     = 'Cancelled complaints cannot be resolved.'
+               )
+      ) TO reported-complaint.
+
+      CONTINUE.
+
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 4 : Already resolved (Backend Idempotency)
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'RESOLVED'.
+      CONTINUE.
+    ENDIF.
+
+    "--------------------------------------------------------------
+    " Rule 5 : INPROGRESS -> RESOLVED
+    "--------------------------------------------------------------
+    IF <ls_complaint>-StatusId = 'INPROGRESS'.
+
+      APPEND VALUE #(
+        %tky     = <ls_complaint>-%tky
+        StatusId = 'RESOLVED'
+      ) TO lt_update.
+
+    ENDIF.
+
+  ENDLOOP.
+
+  " ------------------------------------------------------------------
+  " Step 3 : Update RAP Transaction Buffer
+  " ------------------------------------------------------------------
+  IF lt_update IS NOT INITIAL.
+
+    MODIFY ENTITIES OF zi_cmp_hdr IN LOCAL MODE
+      ENTITY Complaint
+        UPDATE FIELDS ( StatusId )
+        WITH lt_update
+      REPORTED DATA(lt_reported)
+      FAILED DATA(lt_failed).
+
+    reported-complaint = CORRESPONDING #(
+      BASE ( reported-complaint )
+      lt_reported-complaint ).
+
+    failed-complaint = CORRESPONDING #(
+      BASE ( failed-complaint )
+      lt_failed-complaint ).
+
+  ENDIF.
+
+  " ------------------------------------------------------------------
+  " Step 4 : Refresh ONLY modified entities ($self)
+  " ------------------------------------------------------------------
+  IF lt_update IS NOT INITIAL.
+
+    READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
+      ENTITY Complaint
+        ALL FIELDS
+        WITH CORRESPONDING #( lt_update )
+      RESULT DATA(lt_result).
+
+    result = VALUE #(
+      FOR ls_result IN lt_result
+      (
+        %tky   = ls_result-%tky
+        %param = ls_result
+      )
+    ).
+
+  ENDIF.
+
+ENDMETHOD.
+"-------METHOD RESOLVECOMPLAINT ENDS HERE-------
 
 ENDCLASS.
 
@@ -959,61 +1429,113 @@ CLASS lhc_Comment IMPLEMENTATION.
 
 "-------METHOD SETCOMMENTDETAILS STARTS HERE-------
   METHOD SetCommentDetails.
-  " 1. Bulk read the newly created comments
+
+  "------------------------------------------------------------
+  " 1. Bulk Read Newly Created Comments
+  "------------------------------------------------------------
   READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
     ENTITY Comment
       FIELDS ( ComplaintId CommentById CommentByType )
       WITH CORRESPONDING #( keys )
     RESULT DATA(lt_comments).
 
-  IF lt_comments IS INITIAL. RETURN. ENDIF.
+  IF lt_comments IS INITIAL.
+    RETURN.
+  ENDIF.
 
-  " 🚀 PERFORMANCE FIX: Collect all parent keys and read them IN ONE BULK SHOT before the loop
+  "------------------------------------------------------------
+  " 2. Bulk Read Parent Complaints
+  "------------------------------------------------------------
   READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
     ENTITY Complaint
       FIELDS ( CustomerId AgentId )
-      WITH VALUE #( FOR ls_com IN lt_comments ( ComplaintId = ls_com-ComplaintId ) )
+      WITH VALUE #(
+        FOR ls_comment IN lt_comments
+        ( ComplaintId = ls_comment-ComplaintId )
+      )
     RESULT DATA(lt_parent_complaints).
 
   DATA lt_update TYPE TABLE FOR UPDATE zi_cmp_hdr\\Comment.
-  DATA(lv_current_user) = cl_abap_context_info=>get_user_technical_name( ).
 
-  " 2. High-speed internal memory loop
+  DATA(lv_current_user) =
+      cl_abap_context_info=>get_user_technical_name( ).
+
+  "------------------------------------------------------------
+  " 3. Determine Comment Details
+  "------------------------------------------------------------
   LOOP AT lt_comments ASSIGNING FIELD-SYMBOL(<ls_comment>).
 
-    " Read from internal memory table using the framework's optimized secondary index
-    READ TABLE lt_parent_complaints ASSIGNING FIELD-SYMBOL(<ls_parent>)
-      WITH KEY entity COMPONENTS ComplaintId = <ls_comment>-ComplaintId.
+    READ TABLE lt_parent_complaints
+      ASSIGNING FIELD-SYMBOL(<ls_parent>)
+      WITH KEY entity COMPONENTS
+        ComplaintId = <ls_comment>-ComplaintId.
 
     IF sy-subrc <> 0.
       CONTINUE.
     ENDIF.
 
+    "----------------------------------------------------------
+    " Determine Effective CommentById
+    "----------------------------------------------------------
+    DATA(lv_effective_user) = COND #(
+      WHEN <ls_comment>-CommentById IS NOT INITIAL
+        THEN <ls_comment>-CommentById
+      ELSE
+        lv_current_user
+    ).
+
+    "----------------------------------------------------------
+    " Determine CommentByType
+    "
+    " Priority:
+    " 1. Exact Customer Match
+    " 2. Exact Agent Match
+    " 3. Customer ID Prefix
+    " 4. Agent ID Prefix
+    " 5. Default = AGENT
+    "----------------------------------------------------------
+    DATA(lv_effective_type) = COND #(
+
+      WHEN lv_effective_user = <ls_parent>-CustomerId
+        THEN 'CUSTOMER'
+
+      WHEN lv_effective_user = <ls_parent>-AgentId
+        THEN 'AGENT'
+
+      WHEN lv_effective_user CP 'CUST*'
+        THEN 'CUSTOMER'
+
+      WHEN lv_effective_user CP 'AGT*'
+        THEN 'AGENT'
+
+      ELSE 'AGENT'
+
+    ).
+
     APPEND VALUE #(
       %tky          = <ls_comment>-%tky
-
-      " Keeps your excellent field preservation check!
-      CommentById   = COND #( WHEN <ls_comment>-CommentById IS INITIAL
-                              THEN lv_current_user
-                              ELSE <ls_comment>-CommentById )
-
-      " Keeps your loose customer-fallback classification strategy!
-      CommentByType = COND #( WHEN lv_current_user = <ls_parent>-CustomerId
-                              THEN 'CUSTOMER'
-                              ELSE 'AGENT' )
+      CommentById   = lv_effective_user
+      CommentByType = lv_effective_type
     ) TO lt_update.
+
   ENDLOOP.
 
-  " 3. Bulk update transactional buffer
+  "------------------------------------------------------------
+  " 4. Bulk Update RAP Transaction Buffer
+  "------------------------------------------------------------
   IF lt_update IS NOT INITIAL.
+
     MODIFY ENTITIES OF zi_cmp_hdr IN LOCAL MODE
       ENTITY Comment
         UPDATE FIELDS ( CommentById CommentByType )
         WITH lt_update
       REPORTED DATA(lt_reported).
 
-    reported-comment = CORRESPONDING #( lt_reported-comment ).
+    reported-comment =
+      CORRESPONDING #( lt_reported-comment ).
+
   ENDIF.
+
 ENDMETHOD.
 "-------METHOD SETCOMMENTDETAILS ENDS HERE-------
 

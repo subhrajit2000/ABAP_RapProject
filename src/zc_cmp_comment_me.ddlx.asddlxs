@@ -1,0 +1,16 @@
+@Metadata.layer: #CORE
+
+annotate view ZC_CMP_COMMENT with
+{
+  @UI.lineItem: [ { position: 10, label: 'Comment' } ]
+  CommentText;
+
+  @UI.lineItem: [ { position: 20, label: 'User Type' } ]
+  CommentByType;
+
+  @UI.lineItem: [ { position: 30, label: 'Author ID' } ]
+  CommentById;
+
+  @UI.lineItem: [ { position: 40, label: 'Created At' } ]
+  CreatedAt;
+}

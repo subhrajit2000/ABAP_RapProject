@@ -47,6 +47,7 @@ early numbering
 
   // Business Actions
   action ( features : instance ) CloseComplaint  result [1] $self;
+  action ( features : instance ) ResolveComplaint result [1] $self;
   action ( features : instance ) CancelComplaint result [1] $self;
   action ( features : instance ) AssignAgent parameter ZI_ASSIGN_AGENT_PARAM result [1] $self;
   action ( features : instance ) StartProcessing result [1] $self;
@@ -54,7 +55,6 @@ early numbering
   // Fully managed system tracking properties
   field ( readonly )
         ComplaintId,
-        CustomerId,
         StatusId,
         CreatedBy,
         CreatedAt,
@@ -64,6 +64,7 @@ early numbering
 
   // Enforced input parameters upon initial creation
   field ( mandatory : create )
+        CustomerId,
         CategoryId,
         Title,
         Description;
@@ -89,7 +90,6 @@ authorization dependent by _Complaint
 etag dependent by _Complaint
 early numbering
 {
-  // Internal operations allow staging container adjustments without UI exposure
   internal delete;
   internal update;
 
@@ -122,5 +122,5 @@ early numbering
   determination SetCommentDetails on modify { create; }
   validation ValidateComment on save { create; }
 
-  association _Complaint{ with draft; }
+  association _Complaint { with draft; }
 }

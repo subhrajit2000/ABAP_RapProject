@@ -1,5 +1,10 @@
 @EndUserText.label: 'Service Definition for Complaint App'
 define service ZUI_CMP_SERVICE {
-  expose ZC_CMP_HDR     as Complaint;
-  expose ZC_CMP_COMMENT as Comment;
+  expose ZC_CMP_HDR      as Complaint;
+  expose ZC_CMP_COMMENT  as Comment;
+  expose ZI_CMP_CUSTOMER as Customer;
+  expose ZI_CMP_AGENT    as Agent;
+  expose ZI_CMP_CATEGORY as Category;
+  expose ZI_CMP_PRIORITY as Priority;
+  expose ZI_CMP_STATUS   as Status;
 }

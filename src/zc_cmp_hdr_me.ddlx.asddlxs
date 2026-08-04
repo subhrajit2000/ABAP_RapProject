@@ -1,0 +1,136 @@
+@Metadata.layer: #CORE
+
+@UI: {
+  headerInfo: {
+    typeName       : 'Complaint',
+    typeNamePlural : 'Complaints',
+    title          : { value: 'Title' },
+    description    : { value: 'ComplaintId' }
+  }
+}
+
+annotate view ZC_CMP_HDR with
+{
+
+  //====================================================================
+  // FACETS (OBJECT PAGE LAYOUT)
+  //====================================================================
+
+  @UI.facet: [
+    {
+      id              : 'GeneralInformation',
+      type            : #FIELDGROUP_REFERENCE,
+      label           : 'General Information',
+      targetQualifier : 'GENERAL',
+      position        : 10
+    },
+    {
+      id              : 'Classification',
+      type            : #FIELDGROUP_REFERENCE,
+      label           : 'Classification',
+      targetQualifier : 'CLASSIFICATION',
+      position        : 20
+    },
+    {
+      id              : 'Assignment',
+      type            : #FIELDGROUP_REFERENCE,
+      label           : 'Assignment',
+      targetQualifier : 'ASSIGNMENT',
+      position        : 30
+    },
+    {
+      id              : 'Audit',
+      type            : #FIELDGROUP_REFERENCE,
+      label           : 'Audit Information',
+      targetQualifier : 'AUDIT',
+      position        : 40
+    },
+    {
+      id              : 'Comments',
+      label           : 'Comments',
+      type            : #LINEITEM_REFERENCE,
+      targetElement   : '_Comments',
+      position        : 50
+    }
+  ]
+
+  //====================================================================
+  // COMPLAINT ID & ACTIONS
+  //====================================================================
+
+  @UI.lineItem: [
+    { position: 10, importance: #HIGH },
+    { position: 90,  type: #FOR_ACTION, dataAction: 'AssignAgent',     label: 'Assign Agent' },
+    { position: 100, type: #FOR_ACTION, dataAction: 'StartProcessing', label: 'Start Processing' },
+    { position: 110, type: #FOR_ACTION, dataAction: 'ResolveComplaint', label: 'Resolve' },
+    { position: 120, type: #FOR_ACTION, dataAction: 'CloseComplaint',   label: 'Close' },
+    { position: 130, type: #FOR_ACTION, dataAction: 'CancelComplaint',  label: 'Cancel' }
+  ]
+  @UI.selectionField: [ { position: 10 } ]
+  @UI.identification: [ { position: 10 } ]
+  @UI.fieldGroup:     [ { qualifier: 'GENERAL', position: 10 } ]
+  ComplaintId;
+
+  //====================================================================
+  // TITLE & DESCRIPTION
+  //====================================================================
+
+  @UI.lineItem:       [ { position: 30, importance: #HIGH } ]
+  @UI.identification: [ { position: 20 } ]
+  @UI.fieldGroup:     [ { qualifier: 'GENERAL', position: 20 } ]
+  Title;
+
+  @UI.identification: [ { position: 30 } ]
+  @UI.fieldGroup:     [ { qualifier: 'GENERAL', position: 30 } ]
+  Description;
+
+  //====================================================================
+  // CLASSIFICATION (CATEGORY, PRIORITY, STATUS)
+  //====================================================================
+
+  @UI.lineItem:       [ { position: 60, importance: #HIGH } ]
+  @UI.selectionField: [ { position: 50 } ]
+  @UI.fieldGroup:     [ { qualifier: 'CLASSIFICATION', position: 10 } ]
+  CategoryId;
+
+  @UI.lineItem:       [ { position: 50, importance: #HIGH } ]
+  @UI.selectionField: [ { position: 40 } ]
+  @UI.fieldGroup:     [ { qualifier: 'CLASSIFICATION', position: 20 } ]
+  PriorityId;
+
+  @UI.lineItem:       [ { position: 40, importance: #HIGH } ]
+  @UI.selectionField: [ { position: 30 } ]
+  @UI.fieldGroup:     [ { qualifier: 'CLASSIFICATION', position: 30 } ]
+  StatusId;
+
+  //====================================================================
+  // ASSIGNMENT (CUSTOMER & AGENT)
+  //====================================================================
+
+  @UI.lineItem:       [ { position: 20, importance: #HIGH } ]
+  @UI.selectionField: [ { position: 20 } ]
+  @UI.fieldGroup:     [ { qualifier: 'ASSIGNMENT', position: 10 } ]
+  CustomerId;
+
+  @UI.lineItem:       [ { position: 70, importance: #LOW } ]
+  @UI.fieldGroup:     [ { qualifier: 'ASSIGNMENT', position: 20 } ]
+  AgentId;
+
+  //====================================================================
+  // AUDIT INFORMATION
+  //====================================================================
+
+  @UI.fieldGroup: [ { qualifier: 'AUDIT', position: 10 } ]
+  CreatedBy;
+
+  @UI.lineItem:   [ { position: 80, importance: #LOW } ]
+  @UI.fieldGroup: [ { qualifier: 'AUDIT', position: 20 } ]
+  CreatedAt;
+
+  @UI.fieldGroup: [ { qualifier: 'AUDIT', position: 30 } ]
+  ClosedBy;
+
+  @UI.fieldGroup: [ { qualifier: 'AUDIT', position: 40 } ]
+  ClosedOn;
+
+}

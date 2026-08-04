@@ -15,20 +15,24 @@ define root view entity ZI_CMP_HDR
   association [1..1] to ZI_CMP_CATEGORY as _Category      on $projection.CategoryId = _Category.CategoryId
 {
   key complaint_id as ComplaintId,
+
       customer_id  as CustomerId,
       priority_id  as PriorityId,
       status_id    as StatusId,
       category_id  as CategoryId,
       agent_id     as AgentId,
+
       title        as Title,
       description  as Description,
+      
       closed_by    as ClosedBy,
       closed_on    as ClosedOn,
       created_by   as CreatedBy,
       created_at   as CreatedAt,
+
       @Semantics.systemDateTime.lastChangedAt: true
       last_changed_at as LastChangedAt,
-      
+
       // Exposed Associations
       _Customer,
       _Agent,
