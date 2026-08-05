@@ -675,186 +675,186 @@ ENDMETHOD.
 "-------METHOD VALIDATECOMPLAINT STARTS HERE-------
 METHOD ValidateComplaint.
 
-  " ------------------------------------------------------------------
-  " Phase 1 : Read complaint data from RAP Transaction Buffer
-  " ------------------------------------------------------------------
-  READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
-    ENTITY Complaint
-      FIELDS ( CustomerId CategoryId Title Description )
-      WITH CORRESPONDING #( keys )
-    RESULT DATA(lt_complaints).
+    " ------------------------------------------------------------------
+    " Phase 1 : Read complaint data from RAP Transaction Buffer
+    " ------------------------------------------------------------------
+    READ ENTITIES OF zi_cmp_hdr IN LOCAL MODE
+      ENTITY Complaint
+        FIELDS ( CustomerId CategoryId Title Description )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(lt_complaints).
 
-  IF lt_complaints IS INITIAL.
-    RETURN.
-  ENDIF.
-
-  " ------------------------------------------------------------------
-  " Phase 2 : Collect unique Customer IDs and Category IDs
-  " ------------------------------------------------------------------
-  DATA:
-    lt_customer_ids TYPE SORTED TABLE OF zsn_customer-customer_id
-                       WITH UNIQUE KEY table_line,
-    lt_category_ids TYPE SORTED TABLE OF zsn_category-category_id
-                       WITH UNIQUE KEY table_line.
-
-  LOOP AT lt_complaints ASSIGNING FIELD-SYMBOL(<ls_complaint>).
-
-    IF <ls_complaint>-CustomerId IS NOT INITIAL.
-      INSERT <ls_complaint>-CustomerId INTO TABLE lt_customer_ids.
+    IF lt_complaints IS INITIAL.
+      RETURN.
     ENDIF.
 
-    IF <ls_complaint>-CategoryId IS NOT INITIAL.
-      INSERT <ls_complaint>-CategoryId INTO TABLE lt_category_ids.
-    ENDIF.
+    " ------------------------------------------------------------------
+    " Phase 2 : Collect unique Customer IDs and Category IDs
+    " ------------------------------------------------------------------
+    DATA:
+      lt_customer_ids TYPE SORTED TABLE OF zsn_customer-customer_id
+                         WITH UNIQUE KEY table_line,
+      lt_category_ids TYPE SORTED TABLE OF zsn_category-category_id
+                         WITH UNIQUE KEY table_line.
 
-  ENDLOOP.
+    LOOP AT lt_complaints ASSIGNING FIELD-SYMBOL(<ls_complaint>).
 
-  " ------------------------------------------------------------------
-  " Phase 3 : Bulk Read Customer Master
-  " ------------------------------------------------------------------
-  DATA lt_customers TYPE SORTED TABLE OF zsn_customer
-                       WITH UNIQUE KEY customer_id.
+      IF <ls_complaint>-CustomerId IS NOT INITIAL.
+        INSERT <ls_complaint>-CustomerId INTO TABLE lt_customer_ids.
+      ENDIF.
 
-  IF lt_customer_ids IS NOT INITIAL.
+      IF <ls_complaint>-CategoryId IS NOT INITIAL.
+        INSERT <ls_complaint>-CategoryId INTO TABLE lt_category_ids.
+      ENDIF.
 
-    SELECT FROM zsn_customer
-      FIELDS customer_id
-      FOR ALL ENTRIES IN @lt_customer_ids
-      WHERE customer_id = @lt_customer_ids-table_line
-      INTO TABLE @lt_customers.
+    ENDLOOP.
 
-  ENDIF.
+    " ------------------------------------------------------------------
+    " Phase 3 : Bulk Read Customer Master (Fixed with CORRESPONDING FIELDS OF)
+    " ------------------------------------------------------------------
+    DATA lt_customers TYPE SORTED TABLE OF zsn_customer
+                         WITH UNIQUE KEY customer_id.
 
-  " ------------------------------------------------------------------
-  " Phase 4 : Bulk Read Category Master
-  " ------------------------------------------------------------------
-  DATA lt_categories TYPE SORTED TABLE OF zsn_category
-                        WITH UNIQUE KEY category_id.
+    IF lt_customer_ids IS NOT INITIAL.
 
-  IF lt_category_ids IS NOT INITIAL.
-
-    SELECT FROM zsn_category
-      FIELDS category_id
-      FOR ALL ENTRIES IN @lt_category_ids
-      WHERE category_id = @lt_category_ids-table_line
-      INTO TABLE @lt_categories.
-
-  ENDIF.
-
-  " ------------------------------------------------------------------
-  " Phase 5 : Business Validation Loop
-  " ------------------------------------------------------------------
-  LOOP AT lt_complaints ASSIGNING <ls_complaint>.
-
-    "--------------------------------------------------------------
-    " Check A : Title is Mandatory
-    "--------------------------------------------------------------
-    IF <ls_complaint>-Title IS INITIAL.
-
-      APPEND VALUE #(
-        %tky = <ls_complaint>-%tky
-      ) TO failed-complaint.
-
-      APPEND VALUE #(
-        %tky           = <ls_complaint>-%tky
-        %element-Title = if_abap_behv=>mk-on
-        %msg           = new_message_with_text(
-                           severity = if_abap_behv_message=>severity-error
-                           text     = 'A summary Title is mandatory for every complaint record.'
-                         )
-      ) TO reported-complaint.
+      SELECT FROM zsn_customer
+        FIELDS customer_id
+        FOR ALL ENTRIES IN @lt_customer_ids
+        WHERE customer_id = @lt_customer_ids-table_line
+        INTO CORRESPONDING FIELDS OF TABLE @lt_customers.
 
     ENDIF.
 
-    "--------------------------------------------------------------
-    " Check B : Description is Mandatory
-    "--------------------------------------------------------------
-    IF <ls_complaint>-Description IS INITIAL.
+    " ------------------------------------------------------------------
+    " Phase 4 : Bulk Read Category Master (Fixed with CORRESPONDING FIELDS OF)
+    " ------------------------------------------------------------------
+    DATA lt_categories TYPE SORTED TABLE OF zsn_category
+                          WITH UNIQUE KEY category_id.
 
-      APPEND VALUE #(
-        %tky = <ls_complaint>-%tky
-      ) TO failed-complaint.
+    IF lt_category_ids IS NOT INITIAL.
 
-      APPEND VALUE #(
-        %tky                 = <ls_complaint>-%tky
-        %element-Description = if_abap_behv=>mk-on
-        %msg                 = new_message_with_text(
-                                 severity = if_abap_behv_message=>severity-error
-                                 text     = 'Detailed Description cannot be left empty.'
-                               )
-      ) TO reported-complaint.
-
-    ELSEIF numofchar( <ls_complaint>-Description ) < 10.
-
-      "------------------------------------------------------------
-      " Check C : Description Minimum Length
-      "------------------------------------------------------------
-      APPEND VALUE #(
-        %tky = <ls_complaint>-%tky
-      ) TO failed-complaint.
-
-      APPEND VALUE #(
-        %tky                 = <ls_complaint>-%tky
-        %element-Description = if_abap_behv=>mk-on
-        %msg                 = new_message_with_text(
-                                 severity = if_abap_behv_message=>severity-error
-                                 text     = 'Description must contain at least 10 meaningful characters.'
-                               )
-      ) TO reported-complaint.
+      SELECT FROM zsn_category
+        FIELDS category_id
+        FOR ALL ENTRIES IN @lt_category_ids
+        WHERE category_id = @lt_category_ids-table_line
+        INTO CORRESPONDING FIELDS OF TABLE @lt_categories.
 
     ENDIF.
 
-    "--------------------------------------------------------------
-    " Check D : Customer Must Exist
-    "--------------------------------------------------------------
-    READ TABLE lt_customers
-      WITH TABLE KEY customer_id = <ls_complaint>-CustomerId
-      TRANSPORTING NO FIELDS.
+    " ------------------------------------------------------------------
+    " Phase 5 : Business Validation Loop
+    " ------------------------------------------------------------------
+    LOOP AT lt_complaints ASSIGNING <ls_complaint>.
 
-    IF sy-subrc <> 0.
+      "--------------------------------------------------------------
+      " Check A : Title is Mandatory
+      "--------------------------------------------------------------
+      IF <ls_complaint>-Title IS INITIAL.
 
-      APPEND VALUE #(
-        %tky = <ls_complaint>-%tky
-      ) TO failed-complaint.
+        APPEND VALUE #(
+          %tky = <ls_complaint>-%tky
+        ) TO failed-complaint.
 
-      APPEND VALUE #(
-        %tky                = <ls_complaint>-%tky
-        %element-CustomerId = if_abap_behv=>mk-on
-        %msg                = new_message_with_text(
-                                severity = if_abap_behv_message=>severity-error
-                                text     = 'Selected Customer does not exist.'
-                              )
-      ) TO reported-complaint.
+        APPEND VALUE #(
+          %tky           = <ls_complaint>-%tky
+          %element-Title = if_abap_behv=>mk-on
+          %msg           = new_message_with_text(
+                             severity = if_abap_behv_message=>severity-error
+                             text     = 'A summary Title is mandatory for every complaint record.'
+                           )
+        ) TO reported-complaint.
 
-    ENDIF.
+      ENDIF.
 
-    "--------------------------------------------------------------
-    " Check E : Category Must Exist
-    "--------------------------------------------------------------
-    READ TABLE lt_categories
-      WITH TABLE KEY category_id = <ls_complaint>-CategoryId
-      TRANSPORTING NO FIELDS.
+      "--------------------------------------------------------------
+      " Check B : Description is Mandatory
+      "--------------------------------------------------------------
+      IF <ls_complaint>-Description IS INITIAL.
 
-    IF sy-subrc <> 0.
+        APPEND VALUE #(
+          %tky = <ls_complaint>-%tky
+        ) TO failed-complaint.
 
-      APPEND VALUE #(
-        %tky = <ls_complaint>-%tky
-      ) TO failed-complaint.
+        APPEND VALUE #(
+          %tky                 = <ls_complaint>-%tky
+          %element-Description = if_abap_behv=>mk-on
+          %msg                 = new_message_with_text(
+                                   severity = if_abap_behv_message=>severity-error
+                                   text     = 'Detailed Description cannot be left empty.'
+                                 )
+        ) TO reported-complaint.
 
-      APPEND VALUE #(
-        %tky                = <ls_complaint>-%tky
-        %element-CategoryId = if_abap_behv=>mk-on
-        %msg                = new_message_with_text(
-                                severity = if_abap_behv_message=>severity-error
-                                text     = 'Selected Category does not exist.'
-                              )
-      ) TO reported-complaint.
+      ELSEIF numofchar( <ls_complaint>-Description ) < 10.
 
-    ENDIF.
+        "------------------------------------------------------------
+        " Check C : Description Minimum Length
+        "------------------------------------------------------------
+        APPEND VALUE #(
+          %tky = <ls_complaint>-%tky
+        ) TO failed-complaint.
 
-  ENDLOOP.
+        APPEND VALUE #(
+          %tky                 = <ls_complaint>-%tky
+          %element-Description = if_abap_behv=>mk-on
+          %msg                 = new_message_with_text(
+                                   severity = if_abap_behv_message=>severity-error
+                                   text     = 'Description must contain at least 10 meaningful characters.'
+                                 )
+        ) TO reported-complaint.
 
-ENDMETHOD.
+      ENDIF.
+
+      "--------------------------------------------------------------
+      " Check D : Customer Must Exist
+      "--------------------------------------------------------------
+      READ TABLE lt_customers
+        WITH TABLE KEY customer_id = <ls_complaint>-CustomerId
+        TRANSPORTING NO FIELDS.
+
+      IF sy-subrc <> 0.
+
+        APPEND VALUE #(
+          %tky = <ls_complaint>-%tky
+        ) TO failed-complaint.
+
+        APPEND VALUE #(
+          %tky                = <ls_complaint>-%tky
+          %element-CustomerId = if_abap_behv=>mk-on
+          %msg                = new_message_with_text(
+                                  severity = if_abap_behv_message=>severity-error
+                                  text     = 'Selected Customer does not exist.'
+                                )
+        ) TO reported-complaint.
+
+      ENDIF.
+
+      "--------------------------------------------------------------
+      " Check E : Category Must Exist
+      "--------------------------------------------------------------
+      READ TABLE lt_categories
+        WITH TABLE KEY category_id = <ls_complaint>-CategoryId
+        TRANSPORTING NO FIELDS.
+
+      IF sy-subrc <> 0.
+
+        APPEND VALUE #(
+          %tky = <ls_complaint>-%tky
+        ) TO failed-complaint.
+
+        APPEND VALUE #(
+          %tky                = <ls_complaint>-%tky
+          %element-CategoryId = if_abap_behv=>mk-on
+          %msg                = new_message_with_text(
+                                  severity = if_abap_behv_message=>severity-error
+                                  text     = 'Selected Category does not exist.'
+                                )
+        ) TO reported-complaint.
+
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD.
 "-------METHOD VALIDATECOMPLAINT ENDS HERE-------
 
 "-------METHOD ASSIGNAGENT STARTS HERE-------
