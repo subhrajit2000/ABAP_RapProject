@@ -89,8 +89,10 @@ annotate view ZC_CMP_HDR with
   //====================================================================
 
   @UI.lineItem:       [ { position: 60, importance: #HIGH } ]
+  @UI.identification: [{ position: 60 }]
   @UI.selectionField: [ { position: 50 } ]
   @UI.fieldGroup:     [ { qualifier: 'CLASSIFICATION', position: 10 } ]
+  @UI.textArrangement: #TEXT_ONLY
   CategoryId;
 
   @UI.lineItem:       [ { position: 50, importance: #HIGH } ]

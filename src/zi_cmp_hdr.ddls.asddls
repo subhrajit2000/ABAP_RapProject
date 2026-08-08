@@ -19,7 +19,9 @@ define root view entity ZI_CMP_HDR
       customer_id  as CustomerId,
       priority_id  as PriorityId,
       status_id    as StatusId,
+      @ObjectModel.text.association: '_Category'
       category_id  as CategoryId,
+      
       agent_id     as AgentId,
 
       title        as Title,
@@ -32,6 +34,7 @@ define root view entity ZI_CMP_HDR
 
       @Semantics.systemDateTime.lastChangedAt: true
       last_changed_at as LastChangedAt,
+      
 
       // Exposed Associations
       _Customer,
