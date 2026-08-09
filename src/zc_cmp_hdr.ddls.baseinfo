@@ -3,6 +3,7 @@
 {
 "FROM":
 [
+"ZI_CMP_CATEGORY",
 "ZI_CMP_HDR"
 ],
 "ASSOCIATED":

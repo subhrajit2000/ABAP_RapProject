@@ -24,8 +24,10 @@ define root view entity ZC_CMP_HDR
       
       @EndUserText.label: 'Category'
       @Consumption.valueHelpDefinition: [{ entity: { name: 'ZI_CMP_CATEGORY', element: 'CategoryId' } }]
+      @ObjectModel.text.element: ['CategoryDesc']
       CategoryId,
       
+      _Category.CategoryDesc as CategoryDesc,
       
       @EndUserText.label: 'Assigned Agent'
       @Consumption.valueHelpDefinition: [{ entity: { name: 'ZI_CMP_AGENT', element: 'AgentId' } }]
